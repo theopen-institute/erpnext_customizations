@@ -19,8 +19,6 @@ class PayrollVoucher(AccountsController):
 			- the employee loan part needs to be significantly tested
 	"""
 
-
-
 	def on_submit(self):
  		self.submit_salary_slips()
 
@@ -227,7 +225,6 @@ class PayrollVoucher(AccountsController):
  		gl_map = []
 
  		# earnings and deductions
- 		#PG: refactor the gl_map append stuff; right now, it's very repetative
 		if earnings or deductions:
 			print("nada")
 			# earnings
@@ -321,11 +318,6 @@ class PayrollVoucher(AccountsController):
 			return account_details
 
 	def get_salary_components(self, component_type):
-		"""
-		#PG: right now, since I removed the status filter from get_sal_slip_list
-		this next call will return all slips; I should make sure they're all submitted before I get
-		to this step somehow
-		"""
 		salary_slips = self.get_sal_slip_list(as_dict = True)
 		if salary_slips:
 			salary_components = frappe.db.sql("""select salary_component, amount, parentfield
