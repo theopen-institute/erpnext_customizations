@@ -340,11 +340,8 @@ class PayrollVoucher(AccountsController):
 		return self.get_gl_dict({
 			"account": account,
 			"against": against,
-			#PG: add precision to "credit" and "debit"; where is this specified?
-			# old code: precision = frappe.get_precision("Journal Entry Account", "debit_in_account_currency")
-			# old code: "debit": flt(d.credit, d.precision("credit")),
-			"credit": credit,
-			"debit": debit,
+			"credit": flt(credit, frappe.get_precision("Journal Entry Account", "credit_in_account_currency")),
+			"debit": flt(debit, frappe.get_precision("Journal Entry Account", "debit_in_account_currency")),
 	# 		"account_currency": d.account_currency,
 	# 		"debit_in_account_currency": flt(d.debit_in_account_currency, d.precision("debit_in_account_currency")),
 	# 		"credit_in_account_currency": flt(d.credit_in_account_currency, d.precision("credit_in_account_currency")),
