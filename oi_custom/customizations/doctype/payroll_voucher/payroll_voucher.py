@@ -14,18 +14,41 @@ from erpnext.controllers.accounts_controller import AccountsController
 
 class PayrollVoucher(AccountsController):
 	"""
+		This doctype "Payroll Voucher" represents a set of Salary Slips that have been recorded to the
+		general ledger. It allows authorized users to generate new Salary Slips for a given subset of
+		employees at a company, identified by their payroll frequency and period of work and optionally
+		filtered by Branch, Department, and Designation.
+
+		When a pay period and frequency have been entered, the Payroll Voucher will find all employees 
+		who are listed as active in matching Salary Structures, and it will match those employees to 
+		Salary Slips that already exist for them. Users are then given the opportunity to create new Salary
+		Slips for any employees who currently lack them for the relevant period. These new slips are created 
+		with sensible defaults, and they can be edited further before the Payroll Voucher is submitted.
+
+		The Payroll Voucher aggregates all credits and debits on each account to a single ledger entry. This
+		allows HR to keep individual salary structures private even when accounts are public. If, however,
+		the company's default payroll acount is marked as of type "Payable", each employee's net income
+		will be alloted to an individual account.
+
 		TODO:
 			- some loose ends might exist related especially to precision and multiple currencies
 			- the employee loan part needs to be significantly tested
+			- make the "Create missing salary slips" button appear or disappear as needed
+			- create a button or link that takes users to a view of salary slips relevantly filtered
 	"""
 
 	def on_submit(self):
  		self.submit_salary_slips()
 
  	def on_cancel(self):
- 		self.enter_payroll_in_gl(cancel=True)
+ 		self.register_payroll_in_gl(cancel=True)
 
 	def fill_salary_slips(self):
+		"""
+			This function updates the Payroll Voucher's table of Payroll Salary Slip Detail documents, a custom
+			child doctype. These documents correspond to salary slips that belong to specific employees for the
+			given pay period.
+		"""
 		self.set('salary_slips', [])
 		salary_slips = self.get_sal_slip_list(as_dict=True)
 		for d in salary_slips:
@@ -36,9 +59,10 @@ class PayrollVoucher(AccountsController):
 
 	def get_emp_list(self, as_dict=False):
 		"""
-			Returns list of active employees based on selected criteria
-			and for which salary structure exists
+			Returns list of active employees based on selected criteria and for whom a salary structure exists
 		"""
+		
+		### assemble the filter conditions specified in the document into clauses for an sql query
 		cond = self.get_filter_condition()
 		cond += """
 			and ifnull(t1.date_of_joining, '0000-00-00') <= '%(end_date)s'
@@ -49,6 +73,7 @@ class PayrollVoucher(AccountsController):
 		if self.payroll_frequency:
 			condition = """and payroll_frequency = '%(payroll_frequency)s'"""% {"payroll_frequency": self.payroll_frequency}
 
+		### fetch from the database the list of salary structures that fit the specified criteria
 		sal_struct = frappe.db.sql("""
 				select
 					name from `tabSalary Structure`
@@ -60,6 +85,7 @@ class PayrollVoucher(AccountsController):
 					{condition}""".format(condition=condition),
 				{"company": self.company, "salary_slip_based_on_timesheet":self.salary_slip_based_on_timesheet})
 
+		### fetch all employees from the database who belong to the salary structures gathered above
 		if sal_struct:
 			cond += "and t2.parent IN %(sal_struct)s "
 			emp_list = frappe.db.sql("""
@@ -73,9 +99,10 @@ class PayrollVoucher(AccountsController):
 			%s """% cond, {"sal_struct": sal_struct}, as_dict=as_dict)
 			return emp_list
 
+
 	def get_sal_slip_list(self, as_dict=False):
 		"""
-			Returns list of salary slips based on selected criteria
+			Returns list of existing salary slips matching doctument-specified criteria
 		"""
 		cond = self.get_filter_condition()
 
@@ -87,6 +114,9 @@ class PayrollVoucher(AccountsController):
 		return ss_list
 
 	def get_filter_condition(self):
+		"""
+			Assemble sql clause matching filters specified in the document
+		"""
 		for fieldname in ['company', 'start_date', 'end_date']:
 			if not self.get(fieldname):
 				frappe.throw(_("Please set {0}").format(self.meta.get_label(fieldname)))
@@ -98,6 +128,10 @@ class PayrollVoucher(AccountsController):
 		return cond
 
 	def add_missing_slips(self, employees):
+		"""
+			Add lines to the Payroll Salary Slip Detail table representing employees who don't currently
+			have salary slips but who should because they match the specified criteria
+		"""
 		if employees: 
 			all_employees = [o.employee for o in employees]
 			employees_with_slips = [o.employee for o in self.get('salary_slips')]
@@ -147,13 +181,18 @@ class PayrollVoucher(AccountsController):
 					ss_dict["Total Pay"] = fmt_money(ss.rounded_total,currency = frappe.defaults.get_global_default("currency"))
 					ss_dict["Salary Slip"] = format_as_links(ss.name)[0]
 					ss_list.append(ss_dict)
-					self.fill_salary_slips()
+			self.fill_salary_slips()
 		return create_log(ss_list)
+
 
 	def submit_salary_slips(self):
 		"""
-			Submit all salary slips based on selected criteria
+			Submit all salary slips listed in the Payroll Salary Slip Details table. This is typically done when the
+			Payroll Voucher document is submitted.
+
+			TODO: this could probably be simplified to simply iterate through the Payroll Salary Slip Details table
 		"""
+
 		self.check_permission('write')
 
 		ss_list = self.get_sal_slip_list()
@@ -177,18 +216,26 @@ class PayrollVoucher(AccountsController):
 					unsubmitted_ss.append(ss_dict)
 
 		if submitted_ss:
-			self.enter_payroll_in_gl()
+			self.register_payroll_in_gl()
 			frappe.msgprint(_("Salary Slips submitted for period from {0} to {1}").format(ss_obj.start_date, ss_obj.end_date))
 			self.email_salary_slip(submitted_ss)
 
 		return create_submit_log(submitted_ss, unsubmitted_ss)
 
 	def email_salary_slip(self, submitted_ss):
+		"""
+			send emails to employees if indicated by HR Settings
+		"""
 		if frappe.db.get_single_value("HR Settings", "email_salary_slip_to_employee"):
 			for ss in submitted_ss:
 				ss.email_salary_slip()
 
-	def enter_payroll_in_gl(self, cancel=False, adv_adj=False):
+	def register_payroll_in_gl(self, cancel=False, adv_adj=False):
+		"""
+			Apply net payroll transactions to the General Ledger. If default payroll account is of type "Payable",
+			issue net salary each relevant employee's payable account, otherwise aggregate together and issue to
+			the payroll account.
+		"""
 		self.check_permission('write')
 		earnings = self.get_salary_component_total(component_type = "earnings") or {}
  		deductions = self.get_salary_component_total(component_type = "deductions") or {}
@@ -308,6 +355,11 @@ class PayrollVoucher(AccountsController):
 			"posting_date": self.posting_date,
 		})
 
+	
+	"""
+		In this section, what follows are all functions used to fetch and aggregate various parts of Salary Slips, called
+		by the register_payroll_in_gl function.
+	"""
 	def get_salary_component_total(self, component_type = None):
 		salary_components = self.get_salary_components(component_type)
 		if salary_components:
@@ -376,42 +428,6 @@ class PayrollVoucher(AccountsController):
 			""" % ('%s', '%s', cond), (self.start_date, self.end_date), as_dict=True)
 		return totals and totals[0] or None
 
-
-
-# 	def make_payment_entry(self):
-# 		self.check_permission('write')
-# 		total_salary_amount = self.get_total_salary_amount()
-# 		default_payroll_payable_account = self.get_default_payroll_payable_account()
-# 		precision = frappe.get_precision("Journal Entry Account", "debit_in_account_currency")
-
-# 		if total_salary_amount and total_salary_amount.rounded_total:
-# 			journal_entry = frappe.new_doc('Journal Entry')
-# 			journal_entry.voucher_type = 'Bank Entry'
-# 			journal_entry.user_remark = _('Payment of salary from {0} to {1}')\
-# 				.format(self.start_date, self.end_date)
-# 			journal_entry.company = self.company
-# 			journal_entry.posting_date = self.posting_date
-
-# 			payment_amount = flt(total_salary_amount.rounded_total, precision)
-
-# 			journal_entry.set("accounts", [
-# 				{
-# 					"account": self.payment_account,
-# 					"credit_in_account_currency": payment_amount
-# 				},
-# 				{
-# 					"account": default_payroll_payable_account,
-# 					"debit_in_account_currency": payment_amount,
-# 					"reference_type": self.doctype,
-# 					"reference_name": self.name
-# 				}
-# 			])
-# 			return journal_entry.as_dict()
-# 		else:
-# 			frappe.msgprint(
-# 				_("There are no submitted Salary Slips to process."),
-# 				title="Error", indicator="red"
-# 			)
 
 # 	def update_salary_slip_status(self, jv_name = None):
 # 		ss_list = self.get_sal_slip_list(ss_status=1)
@@ -530,54 +546,51 @@ def format_as_links(salary_slip):
 	return ['<a href="#Form/Salary Slip/{0}">{0}</a>'.format(salary_slip)]
 
 
+def get_salary_slip_list(name, docstatus, as_dict=0):
+	payroll_entry = frappe.get_doc('Payroll Entry', name)
+
+	salary_slip_list = frappe.db.sql(
+		"select t1.name, t1.salary_structure from `tabSalary Slip` t1 "
+		"where t1.docstatus = %s "
+		"and t1.start_date >= %s "
+		"and t1.end_date <= %s",
+		(docstatus, payroll_entry.start_date, payroll_entry.end_date),
+		as_dict=as_dict
+	)
+
+	return salary_slip_list
 
 
+@frappe.whitelist()
+def payroll_entry_has_created_slips(name):
+	response = {}
 
-# def get_salary_slip_list(name, docstatus, as_dict=0):
-# 	payroll_entry = frappe.get_doc('Payroll Entry', name)
+	draft_salary_slips = get_salary_slip_list(name, docstatus=0)
+	submitted_salary_slips = get_salary_slip_list(name, docstatus=1)
 
-# 	salary_slip_list = frappe.db.sql(
-# 		"select t1.name, t1.salary_structure from `tabSalary Slip` t1 "
-# 		"where t1.docstatus = %s "
-# 		"and t1.start_date >= %s "
-# 		"and t1.end_date <= %s",
-# 		(docstatus, payroll_entry.start_date, payroll_entry.end_date),
-# 		as_dict=as_dict
-# 	)
+	response['draft'] = 1 if draft_salary_slips else 0
+	response['submitted'] = 1 if submitted_salary_slips else 0
 
-# 	return salary_slip_list
+	return response
 
 
-# @frappe.whitelist()
-# def payroll_entry_has_created_slips(name):
-# 	response = {}
+def get_payroll_entry_bank_entries(payroll_entry_name):
+	journal_entries = frappe.db.sql(
+		'select name from `tabJournal Entry Account` '
+		'where reference_type="Payroll Entry" '
+		'and reference_name=%s and docstatus=1',
+		payroll_entry_name,
+		as_dict=1
+	)
 
-# 	draft_salary_slips = get_salary_slip_list(name, docstatus=0)
-# 	submitted_salary_slips = get_salary_slip_list(name, docstatus=1)
-
-# 	response['draft'] = 1 if draft_salary_slips else 0
-# 	response['submitted'] = 1 if submitted_salary_slips else 0
-
-# 	return response
-
-
-# def get_payroll_entry_bank_entries(payroll_entry_name):
-# 	journal_entries = frappe.db.sql(
-# 		'select name from `tabJournal Entry Account` '
-# 		'where reference_type="Payroll Entry" '
-# 		'and reference_name=%s and docstatus=1',
-# 		payroll_entry_name,
-# 		as_dict=1
-# 	)
-
-# 	return journal_entries
+	return journal_entries
 
 
-# @frappe.whitelist()
-# def payroll_entry_has_bank_entries(name):
-# 	response = {}
+@frappe.whitelist()
+def payroll_entry_has_bank_entries(name):
+	response = {}
 
-# 	bank_entries = get_payroll_entry_bank_entries(name)
-# 	response['submitted'] = 1 if bank_entries else 0
+	bank_entries = get_payroll_entry_bank_entries(name)
+	response['submitted'] = 1 if bank_entries else 0
 
-# 	return response
+	return response
