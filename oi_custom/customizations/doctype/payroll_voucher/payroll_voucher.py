@@ -29,7 +29,9 @@ class PayrollVoucher(AccountsController):
 		allows HR to keep individual salary structures private even when accounts are public. If, however,
 		the company's default payroll acount is marked as of type "Payable", each employee's net income
 		will be alloted to an individual account.
+		
 
+		ADAPTED FROM Payroll Entry doctype, 17 April 2018
 		TODO:
 			- some loose ends might exist related especially to precision and multiple currencies
 			- the employee loan part needs to be significantly tested
@@ -87,17 +89,19 @@ class PayrollVoucher(AccountsController):
 
 		### fetch all employees from the database who belong to the salary structures gathered above
 		if sal_struct:
-			cond += "and t2.parent IN %(sal_struct)s "
+			cond += "and t2.salary_structure IN %(sal_struct)s "
+			cond += "and ((%(from_date)s between t2.from_date and ifnull(t2.to_date, '2199-12-31')) or (%(to_date)s between t2.from_date and ifnull(t2.to_date, '2199-12-31')) or (t2.from_date between %(from_date)s and %(to_date)s))"
 			emp_list = frappe.db.sql("""
 				select
-					t1.name as employee, t1.employee_name, t1.department, t1.designation
+					t1.name as employee, t1.employee_name, t1.department, t1.designation, t2.name
 				from
-					`tabEmployee` t1, `tabSalary Structure Employee` t2
+					`tabEmployee` t1, `tabSalary Structure Assignment` t2
 				where
 					t1.docstatus!=2
 					and t1.name = t2.employee
-			%s """% cond, {"sal_struct": sal_struct}, as_dict=as_dict)
-			return emp_list
+					and t2.docstatus = 1
+			%s """% cond, {"sal_struct": sal_struct, "from_date": self.start_date, "to_date": self.end_date}, as_dict=True)
+  			return emp_list
 
 
 	def get_sal_slip_list(self, as_dict=False):
@@ -302,7 +306,7 @@ class PayrollVoucher(AccountsController):
 				))
 
 				if loan.interest_amount and not loan.interest_income_account:
- 					frappe.throw(_("Select interest income account in employee loan {0}").format(loan.employee_loan))
+ 					frappe.throw(_("Select interest income account in employee loan {0}").format(loan.loan))
 
  				if loan.interest_income_account and loan.interest_amount:
  					gl_map.append(self.new_gl_line(
@@ -410,7 +414,7 @@ class PayrollVoucher(AccountsController):
 			Get loan details from submitted salary slip based on selected criteria
 		"""
 		cond = self.get_filter_condition()
-		return frappe.db.sql(""" select t1.employee, eld.loan_account,
+		return frappe.db.sql(""" select t1.employee, eld.loan_account, eld.loan,
 				eld.interest_income_account, eld.principal_amount, eld.interest_amount, eld.total_payment
 			from
 				`tabSalary Slip` t1, `tabSalary Slip Loan` eld
