@@ -254,7 +254,7 @@ class PayrollVoucher(AccountsController):
  		for slip in slips:
  			name = slip['salary_slip']
  			emp = slip['employee']
- 			net_amount = frappe.db.get_value(doctype="Salary Slip", fieldname="net_pay", filters={"name": name})
+ 			net_amount = frappe.db.get_value(doctype="Salary Slip", fieldname="rounded_total", filters={"name": name})
  			payable_amounts[emp] = net_amount
  			total_payable += net_amount
 
