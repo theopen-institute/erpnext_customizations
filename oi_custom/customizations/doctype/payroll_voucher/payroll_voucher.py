@@ -9,6 +9,8 @@ from dateutil.relativedelta import relativedelta
 from frappe.utils import cint, flt, nowdate, add_days, getdate, fmt_money, add_to_date, DATE_FORMAT
 from frappe import _
 from erpnext.accounts.utils import get_fiscal_year
+from frappe.model.meta import get_field_precision
+from erpnext.accounts.general_ledger import get_round_off_account_and_cost_center
 from erpnext.controllers.accounts_controller import AccountsController
 
 
@@ -359,7 +361,7 @@ class PayrollVoucher(AccountsController):
 			"posting_date": self.posting_date,
 		})
 
-	def round_off_debit_credit(gl_map):
+	def round_off_debit_credit(self, gl_map):
 		precision = get_field_precision(frappe.get_meta("GL Entry").get_field("debit"),
 			currency=frappe.db.get_value("Company", gl_map[0].company, "default_currency", cache=True))
 
@@ -392,8 +394,6 @@ class PayrollVoucher(AccountsController):
 		})
 
 		gl_map.append(round_off_gle)
-
-
 
 
 	"""
