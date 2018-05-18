@@ -258,6 +258,7 @@ class PayrollVoucher(AccountsController):
  			payable_amounts[emp] = net_amount
  			total_payable += net_amount
 
+ 		self.set('base_grand_total', total_payable)
  		
  		# register accounts that will be set against earnings and deductions
  		against_earnings = []
@@ -335,7 +336,7 @@ class PayrollVoucher(AccountsController):
 					credit=amt
 				))
 
-		self.set('base_grand_total', total_payable)
+		self.round_off_debit_credit(gl_map)
 		make_gl_entries(gl_map, cancel=cancel, adv_adj=adv_adj)
 
 	def new_gl_line(self, account=None, against=None, credit=None, debit=None, party_type=None, party=None):
@@ -358,7 +359,43 @@ class PayrollVoucher(AccountsController):
 			"posting_date": self.posting_date,
 		})
 
-	
+	def round_off_debit_credit(gl_map):
+		precision = get_field_precision(frappe.get_meta("GL Entry").get_field("debit"),
+			currency=frappe.db.get_value("Company", gl_map[0].company, "default_currency", cache=True))
+
+		debit_credit_diff = 0.0
+		for entry in gl_map:
+			entry.debit = flt(entry.debit, precision)
+			entry.credit = flt(entry.credit, precision)
+			debit_credit_diff += entry.debit - entry.credit
+
+		debit_credit_diff = flt(debit_credit_diff, precision)
+		round_off_account, round_off_cost_center = get_round_off_account_and_cost_center(gl_map[0].company)
+		
+
+		round_off_gle = frappe._dict()
+		for k in ["voucher_type", "voucher_no", "company",
+			"posting_date", "remarks", "is_opening"]:
+				round_off_gle[k] = gl_map[0][k]
+
+		round_off_gle.update({
+			"account": round_off_account,
+			"debit_in_account_currency": abs(debit_credit_diff) if debit_credit_diff < 0 else 0,
+			"credit_in_account_currency": debit_credit_diff if debit_credit_diff > 0 else 0,
+			"debit": abs(debit_credit_diff) if debit_credit_diff < 0 else 0,
+			"credit": debit_credit_diff if debit_credit_diff > 0 else 0,
+			"cost_center": round_off_cost_center,
+			"party_type": None,
+			"party": None,
+			"against_voucher_type": None,
+			"against_voucher": None
+		})
+
+		gl_map.append(round_off_gle)
+
+
+
+
 	"""
 		In this section, what follows are all functions used to fetch and aggregate various parts of Salary Slips, called
 		by the register_payroll_in_gl function.
