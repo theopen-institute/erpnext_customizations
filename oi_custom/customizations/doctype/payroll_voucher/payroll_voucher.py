@@ -31,12 +31,13 @@ class PayrollVoucher(AccountsController):
 		will be alloted to an individual account.
 		
 
-		ADAPTED FROM Payroll Entry doctype, 17 April 2018
+		ADAPTED FROM Payroll Entry doctype, as of 17 May 2018
 		TODO:
-			- some loose ends might exist related especially to precision and multiple currencies
+			- some loose ends might exist related (especially to multiple currencies)
 			- the employee loan part needs to be significantly tested
 			- make the "Create missing salary slips" button appear or disappear as needed
 			- create a button or link that takes users to a view of salary slips relevantly filtered
+			- FIX: "Payroll Frequency" still expected to match even if timesheets is checked
 	"""
 
 	def on_submit(self):
