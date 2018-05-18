@@ -335,6 +335,7 @@ class PayrollVoucher(AccountsController):
 					credit=amt
 				))
 
+		self.set('base_grand_total', total_payable)
 		make_gl_entries(gl_map, cancel=cancel, adv_adj=adv_adj)
 
 	def new_gl_line(self, account=None, against=None, credit=None, debit=None, party_type=None, party=None):

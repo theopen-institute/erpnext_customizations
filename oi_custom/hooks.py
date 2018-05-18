@@ -87,6 +87,10 @@ app_license = "MIT"
 #	}
 # }
 
+doc_events = {
+	"Payment Entry": {"validate":"oi_custom.customizations.pingpong"}
+}
+
 # Scheduled Tasks
 # ---------------
 
