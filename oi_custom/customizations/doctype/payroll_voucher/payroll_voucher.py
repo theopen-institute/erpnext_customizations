@@ -335,7 +335,7 @@ class PayrollVoucher(AccountsController):
 				gl_map.append(self.new_gl_line(
 					account=default_payroll_payable_account,
 					against=",".join(list(set(against_deductions))),
-					credit=amt
+					credit=total_payable
 				))
 
 		self.round_off_debit_credit(gl_map)
