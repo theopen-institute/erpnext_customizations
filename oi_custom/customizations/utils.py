@@ -3,7 +3,7 @@ from __future__ import unicode_literals
 import frappe, erpnext
 import frappe.defaults
 from frappe.utils import nowdate, cstr, flt, cint, now, getdate
-from frappe import throw, _
+from frappe import throw, _, scrub
 from frappe.utils import formatdate, get_number_format_info
 
 from erpnext.accounts.doctype.payment_entry.payment_entry import PaymentEntry
@@ -21,7 +21,6 @@ def custom_payment_entry_validation(doc,method):
 
 # from payment_entry.py
 def validate(self):
-	frappe.msgprint("zoomzoom")
 	self.setup_party_account_field()
 	self.set_missing_values()
 	self.validate_payment_type()
@@ -58,7 +57,6 @@ def validate_reference_documents(self):
 				.format(comma_or(valid_reference_doctypes)))
 
 		elif d.reference_name:
-			frappe.msgprint("finito")
 			if not frappe.db.exists(d.reference_doctype, d.reference_name):
 				frappe.throw(_("{0} {1} does not exist").format(d.reference_doctype, d.reference_name))
 			else:
