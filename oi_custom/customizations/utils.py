@@ -12,34 +12,35 @@ def pingpong(self,doc):
 	frappe.msgprint("hallO")
 
 def custom_payment_entry_validation(doc,method):
-	print(PaymentEntry.validate)
-	print(validate)
-	print(doc.validate)
-	doc.validate = validate
-	doc.validate(doc)
+	PaymentEntry.validate_reference_documents = custom_validate_reference_documents
+	#Pay.validate(doc)
 	#frappe.msgprint("zzzz")
 
+def onloadping(doc,method):
+	print("Loaded!")
+
 # from payment_entry.py
-def validate(self):
-	self.setup_party_account_field()
-	self.set_missing_values()
-	self.validate_payment_type()
-	self.validate_party_details()
-	self.validate_bank_accounts()
-	self.set_exchange_rate()
-	self.validate_mandatory()
-	validate_reference_documents(self)
-	self.set_amounts()
-	self.clear_unallocated_reference_document_rows()
-	self.validate_payment_against_negative_invoice()
-	self.validate_transaction_reference()
-	self.set_title()
-	self.set_remarks()
-	self.validate_duplicate_entry()
-	self.validate_allocated_amount()
-	self.ensure_supplier_is_not_blocked()
+# def validate(self):
+# 	self.setup_party_account_field()
+# 	self.set_missing_values()
+# 	self.validate_payment_type()
+# 	self.validate_party_details()
+# 	self.validate_bank_accounts()
+# 	self.set_exchange_rate()
+# 	self.validate_mandatory()
+# 	validate_reference_documents(self)
+# 	self.set_amounts()
+# 	self.clear_unallocated_reference_document_rows()
+# 	self.validate_payment_against_negative_invoice()
+# 	self.validate_transaction_reference()
+# 	self.set_title()
+# 	self.set_remarks()
+# 	self.validate_duplicate_entry()
+# 	self.validate_allocated_amount()
+# 	self.ensure_supplier_is_not_blocked()
 	
-def validate_reference_documents(self):
+def custom_validate_reference_documents(self):
+	print("validate reference docs overridden")
 	if self.party_type == "Student":
 		valid_reference_doctypes = ("Fees")
 	elif self.party_type == "Customer":
