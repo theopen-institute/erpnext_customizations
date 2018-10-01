@@ -16,10 +16,10 @@ from erpnext.controllers.accounts_controller import AccountsController
 
 class PayrollVoucher(AccountsController):
 	"""
-		This doctype "Payroll Voucher" represents a set of Salary Slips that have been recorded to the
-		general ledger. It allows authorized users to generate new Salary Slips for a given subset of
-		employees at a company, identified by their payroll frequency and period of work and optionally
-		filtered by Branch, Department, and Designation.
+		This doctype "Payroll Voucher" records a set of Salary Slips into to the general ledger. It allows
+		authorized users to generate new Salary Slips for a given subset of employees at a company, 
+		identified by their payroll frequency and period of work and optionally filtered by Branch, 
+		Department, and Designation.
 
 		When a pay period and frequency have been entered, the Payroll Voucher will find all employees 
 		who are listed as active in matching Salary Structures, and it will match those employees to 
@@ -281,7 +281,6 @@ class PayrollVoucher(AccountsController):
 
  		# earnings and deductions
 		if earnings or deductions:
-			print("nada")
 			# earnings
 			for acc, amount in earnings.items():
 				print(acc, amount)
