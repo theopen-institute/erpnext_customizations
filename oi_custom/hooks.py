@@ -89,7 +89,7 @@ app_license = "MIT"
 
 doc_events = {
 	"Payment Entry": {
-		"before_validate":"oi_custom.customizations.overrides.custom_payment_entry.custom_payment_entry_validation",
+		"before_validate":"oi_custom.customizations.overrides.custom_payment_entry.customize_before_validate",
 	}
 }
 
