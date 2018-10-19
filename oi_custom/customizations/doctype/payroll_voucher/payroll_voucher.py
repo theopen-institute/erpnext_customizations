@@ -46,6 +46,7 @@ class PayrollVoucher(AccountsController, PayrollEntry):
 			- make the "Create missing salary slips" button appear or disappear as needed
 			- create a button or link that takes users to a view of salary slips relevantly filtered
 			- FIX: "Payroll Frequency" still expected to match even if timesheets is checked
+			- it'd be nice to have a "make payment" button for aggregated vouchers that would create a journal entry and hold reference to it
 	"""
 
 	####################
@@ -222,8 +223,10 @@ class PayrollVoucher(AccountsController, PayrollEntry):
 				))
 
 		# manage payable amounts
+		self.outstanding_amount = 0
 		for slip in slips:
 			ss = frappe.get_doc("Salary Slip", slip["name"])
+			self.outstanding_amount += ss.net_pay
 			if self.aggregate_salary_slips:
 				gl_map.append(self.new_gl_line(
 					account=default_payroll_payable_account,
@@ -239,6 +242,7 @@ class PayrollVoucher(AccountsController, PayrollEntry):
 					against_voucher_type="Salary Slip"
 				))
 
+		print self.outstanding_amount
 		self.round_off_debit_credit(gl_map)
 		
 		## iterate through the gl_map to set "against" values for everything.
@@ -249,7 +253,7 @@ class PayrollVoucher(AccountsController, PayrollEntry):
 				gle["against"] = debit_accts
 			elif gle["debit"] > 0:
 				gle["against"] = credit_accts
-				
+
 		make_gl_entries(gl_map, cancel=cancel, adv_adj=adv_adj, merge_entries=True)
 
 
