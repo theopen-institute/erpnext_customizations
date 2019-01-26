@@ -47,6 +47,10 @@ class PayrollVoucher(AccountsController, PayrollEntry):
 			- create a button or link that takes users to a view of salary slips relevantly filtered
 			- FIX: "Payroll Frequency" still expected to match even if timesheets is checked
 			- it'd be nice to have a "make payment" button for aggregated vouchers that would create a journal entry and hold reference to it
+			- sometimes, monthly employees are coming up with daily period is selected
+			- if an employee is deleted from the list manually, he/she is coming up again manually when the create salary slips is clicked
+			  (and salary slips are being created for that person)
+			- 
 	"""
 
 	####################
@@ -123,10 +127,12 @@ class PayrollVoucher(AccountsController, PayrollEntry):
 		"""
 		self.check_permission('write')
 		self.created = 1;
-		emp_list = self.get_emp_list()
+		slips = self.salary_slips
 		ss_list = []
-		if emp_list:
-			for emp in emp_list:
+
+		if slips:
+			for slip in slips:
+				emp = slip.employee
 				if not frappe.db.sql("""select
 						name from `tabSalary Slip`
 					where
@@ -135,15 +141,15 @@ class PayrollVoucher(AccountsController, PayrollEntry):
 						start_date >= %s and
 						end_date <= %s and
 						company = %s
-						""", (emp['employee'], self.start_date, self.end_date, self.company)):
+						""", (emp, self.start_date, self.end_date, self.company)):
 					ss = frappe.get_doc({
 						"doctype": "Salary Slip",
 						"salary_slip_based_on_timesheet": self.salary_slip_based_on_timesheet,
 						"payroll_frequency": self.payroll_frequency,
 						"start_date": self.start_date,
 						"end_date": self.end_date,
-						"employee": emp['employee'],
-						"employee_name": frappe.get_value("Employee", {"name":emp['employee']}, "employee_name"),
+						"employee": emp,
+						"employee_name": frappe.get_value("Employee", {"name":emp}, "employee_name"),
 						"company": self.company,
 						"posting_date": self.posting_date
 					})
