@@ -24,7 +24,7 @@ class PayrollVoucher(AccountsController, PayrollEntry):
 	"""
 		This doctype "Payroll Voucher" records a set of Salary Slips into to the general ledger. It allows
 		authorized users to generate new Salary Slips for a given subset of employees at a company, 
-		identified by their payroll frequency and period of work and optionally filtered by Branch, 
+		identified by their payroll frequency and period of work, and optionally filtered by Branch, 
 		Department, and Designation.
 
 		When a pay period and frequency have been entered, the Payroll Voucher will find all employees 
@@ -41,16 +41,21 @@ class PayrollVoucher(AccountsController, PayrollEntry):
 
 		ADAPTED FROM Payroll Entry doctype, as of 17 May 2018
 		TODO:
-			- some loose ends might exist related (especially to multiple currencies)
-			- the employee loan part needs to be significantly tested
 			- make the "Create missing salary slips" button appear or disappear as needed
-			- create a button or link that takes users to a view of salary slips relevantly filtered
 			- FIX: "Payroll Frequency" still expected to match even if timesheets is checked
 			- it'd be nice to have a "make payment" button for aggregated vouchers that would create a journal entry and hold reference to it
 			- sometimes, monthly employees are coming up with daily period is selected
-			- if an employee is deleted from the list manually, he/she is coming up again manually when the create salary slips is clicked
-			  (and salary slips are being created for that person)
-			- 
+			- I need to go through this VERY CAREFULLY to make sure that the manual list is paramount, above and beyond anything else.
+			- Need to check what's happening with timesheets
+			- add reference to payroll voucher on submission of salary slips (can be done between save and submit)
+			- make deleting salary slips on cancel optional
+			- fix account currency stuff in new_gl_line
+			- highlighting and leaving project (others?) causes the table to get wiped
+			- adding or removing manually is not working right at present.
+			- need to check that a salary slip is not already booked by another payroll voucher (or at least make cancelling them optional, otherwise
+				may become uncancelable)
+			- currently creating a blank salary slip for people who don't fit the parameters when button is pressed (if they've been manually added)
+
 	"""
 
 	####################
@@ -60,6 +65,15 @@ class PayrollVoucher(AccountsController, PayrollEntry):
 		"""
 			MODIFIED: submit unsubmitted salary slips on submission of payroll voucher
 		"""
+		# first, remove blank lines	
+		old_slips = list(self.salary_slips)
+		self.salary_slips = [ss for ss in self.salary_slips if ss.salary_slip is not None]
+		for ss in old_slips:
+			if ss.salary_slip is None:
+				frappe.get_doc("Payroll Salary Slip Detail", ss.name).cancel()
+				frappe.delete_doc("Payroll Salary Slip Detail", ss.name)
+		
+		# then, submit the remaining salary slips
  		self.submit_salary_slips()
 
  	def on_cancel(self):
@@ -67,100 +81,95 @@ class PayrollVoucher(AccountsController, PayrollEntry):
  			NEW: remove ledger entries on cancellation
  		"""
  		self.register_payroll_in_gl(cancel=True)
-
+ 		for slip in self.salary_slips:
+ 			if slip.salary_slip is not None:
+ 				frappe.get_doc("Salary Slip", slip.salary_slip).cancel()
+ 				slip.salary_slip = None
 
 
  	################################
 	### Doctype building methods ###
 	################################
-	def fill_salary_slips(self):
+	def populate_salary_slip_table(self):
 		"""
 			NEW
-			This function updates the Payroll Voucher's table of Payroll Salary Slip Detail documents, a custom
-			child doctype. These documents map salary slips to specific employees for the given pay period.
+			this function populates the salary slip table. First, it finds all employees with salary structure assignments
+			that fit the stipulated conditions (payroll freq, dates, branch, dept, designation, etc.). Then, it looks for salary
+			slips matching the period in question. If none are present, keeps the employee but leaves the salary slip spot blank.
 		"""
+		# first, clear out the existing salary slips table
 		self.set('salary_slips', [])
-		salary_slips = self.get_sal_slip_list(as_dict=True)
-		for d in salary_slips:
-			self.append('salary_slips', d)
 
+		# then, get a list of employees matching the user-specified criteria, and create a line for them in the salary slips table
 		employees = self.get_emp_list()
-		self.add_missing_slips(employees)
-
-	def get_sal_slip_list(self, as_dict=False, ss_status=0):
-		"""
-			MODIFIED to select more fields and to get both draft and submitted slips for period
-			Returns list of existing salary slips matching doctument-specified criteria
-		"""
-		cond = self.get_filter_condition()
-
-		ss_list = frappe.db.sql("""
-			select t1.name, t1.name as salary_slip, t1.employee, t1.employee_name, t1.start_date, t1.end_date from `tabSalary Slip` t1
-			where t1.docstatus != 2 and t1.start_date >= %s and t1.end_date <= %s
-			and (t1.journal_entry is null or t1.journal_entry = "") and ifnull(salary_slip_based_on_timesheet,0) = %s %s
-		""" % ('%s', '%s','%s', cond), (self.start_date, self.end_date, self.salary_slip_based_on_timesheet), as_dict=as_dict)
-		return ss_list
-
-	def add_missing_slips(self, employees):
-		"""
-			NEW
-			Add lines to the Payroll Salary Slip Detail table representing employees who don't currently
-			have salary slips but who should because they match the specified criteria
-		"""
 		if employees: 
-			all_employees = [o.employee for o in employees]
-			employees_with_slips = [o.employee for o in self.get('salary_slips')]
-			employees_without_slips = list(set(all_employees) - set(employees_with_slips))
+			for e in employees:
+				stub = frappe.new_doc("Payroll Salary Slip Detail")
+				stub.employee = e.employee
+				stub.employee_name = e.employee_name
+				self.append('salary_slips', stub)
 
-			for e in employees_without_slips:
-				slipless = frappe.new_doc("Payroll Salary Slip Detail")
-				slipless.employee = e
-				slipless.employee_name = [n.employee_name for n in employees if n.employee == e][0]
-				slipless.salary_slip = None
-				self.append('salary_slips', slipless)
-
+		# finally, check to see if a salary slip already exists for each employee for the period
+		if self.salary_slips:
+			for s in self.salary_slips:
+				match = frappe.get_list("Salary Slip", fields="*",
+					filters={"employee": s.employee, "start_date": self.start_date,
+								"end_date": self.end_date, "docstatus": ("!=", 2)})
+				if(len(match) == 1):
+					s.salary_slip = match[0].name
+					s.start_date = match[0].start_date
+					s.end_date = match[0].end_date
+					s.status = match[0].docstatus
+				elif (len(match) > 1):
+					frappe.msgprint(_("Multiple salary slips in this period exist for {0}").format(s.employee_name))
 
 	def create_salary_slips(self):
 		"""
-			MODIFIED: ???
+			MODIFIED:
+				- to use self.salary_slips instead of self.get_emp_list(), 3rd line below
+				- to call customized create_salary_slips_for_employees_mod function instead of create_salary_slips_for_employees (different arguments)
+				- removes reference to payroll_entry
 			Creates salary slip for selected employees if already not created
 		"""
 		self.check_permission('write')
-		self.created = 1;
-		slips = self.salary_slips
-		ss_list = []
+		self.created = 1
+		#emp_list = [d.employee for d in self.get_emp_list()]
+		emp_list = [d.employee for d in self.salary_slips]
 
-		if slips:
-			for slip in slips:
-				emp = slip.employee
-				if not frappe.db.sql("""select
-						name from `tabSalary Slip`
-					where
-						docstatus!= 2 and
-						employee = %s and
-						start_date >= %s and
-						end_date <= %s and
-						company = %s
-						""", (emp, self.start_date, self.end_date, self.company)):
-					ss = frappe.get_doc({
-						"doctype": "Salary Slip",
-						"salary_slip_based_on_timesheet": self.salary_slip_based_on_timesheet,
-						"payroll_frequency": self.payroll_frequency,
-						"start_date": self.start_date,
-						"end_date": self.end_date,
-						"employee": emp,
-						"employee_name": frappe.get_value("Employee", {"name":emp}, "employee_name"),
-						"company": self.company,
-						"posting_date": self.posting_date
-					})
-					ss.insert()
-					ss_dict = {}
-					ss_dict["Employee Name"] = ss.employee_name
-					ss_dict["Total Pay"] = fmt_money(ss.rounded_total,currency = frappe.defaults.get_global_default("currency"))
-					ss_dict["Salary Slip"] = format(ss.name)[0]
-					ss_list.append(ss_dict)
-			self.fill_salary_slips()
-		return ss_list
+		if emp_list:
+			args = frappe._dict({
+				"salary_slip_based_on_timesheet": self.salary_slip_based_on_timesheet,
+				"payroll_frequency": self.payroll_frequency,
+				"start_date": self.start_date,
+				"end_date": self.end_date,
+				"company": self.company,
+				"posting_date": self.posting_date,
+				"deduct_tax_for_unclaimed_employee_benefits": self.deduct_tax_for_unclaimed_employee_benefits,
+				"deduct_tax_for_unsubmitted_tax_exemption_proof": self.deduct_tax_for_unsubmitted_tax_exemption_proof,
+				#"payroll_entry": self.name
+			})
+			if len(emp_list) > 30:
+				frappe.enqueue(create_salary_slips_for_employees_mod, timeout=600, employees=emp_list, slips=self.salary_slips, args=args)
+			else:
+				create_salary_slips_for_employees_mod(emp_list, self.salary_slips, args, publish_progress=False)
+			
+			self.populate_salary_slip_table()
+
+
+	def submit_salary_slips(self):
+		"""
+			MODIFIED: now uses salary slips listed in doc table rather than pulling from database
+			also uses modified submit_salary_slips_for_employees_mod function (necessary because frappe can't
+			override non-class functions)
+		"""
+		self.check_permission('write')
+		#ss_list = self.get_sal_slip_list(ss_status=0)
+		ss_list = self.salary_slips
+		if len(ss_list) > 30:
+			frappe.enqueue(submit_salary_slips_for_employees_mod, timeout=600, payroll_entry=self, salary_slips=ss_list)
+		else:
+			submit_salary_slips_for_employees_mod(self, ss_list, publish_progress=False)
+
 
 	###############################
 	### LEDGER BUILDING METHODS ###
@@ -175,16 +184,11 @@ class PayrollVoucher(AccountsController, PayrollEntry):
 		"""
 		self.check_permission('write')
 		default_payroll_payable_account = self.get_default_payroll_payable_account()
- 		payroll_account_is_type_payable = self.check_if_account_is_type_payable(default_payroll_payable_account)
- 		slips = self.get_sal_slip_list(as_dict=True)
-		
- 		earnings = self.get_salary_components(component_type="earnings") or {}
- 		deductions = self.get_salary_components(component_type="deductions") or {}
- 		loan_details = self.get_loan_details()
-
-
+ 		slips = self.salary_slips
  		gl_map = []
+
  		# manage earnings
+ 		earnings = self.get_salary_components(component_type="earnings") or {}
  		for earning in earnings:
  			earning["account"] = self.get_salary_component_account(earning["salary_component"])
  			is_flexible_benefit, only_tax_impact = frappe.db.get_value("Salary Component", earning['salary_component'], ['is_flexible_benefit', 'only_tax_impact'])
@@ -198,16 +202,28 @@ class PayrollVoucher(AccountsController, PayrollEntry):
 	 			))
 
 	 	# manage deductions
+	 	deductions = self.get_salary_components(component_type="deductions") or {}
  		for deduction in deductions:
  			deduction["account"] = self.get_salary_component_account(deduction["salary_component"])
- 			gl_map.append(self.new_gl_line(
- 				account=self.get_salary_component_account(deduction["salary_component"]),
- 				credit=deduction["amount"],
- 				#against_voucher=deduction["parent"],
- 				#against_voucher_type="Salary Slip"
- 			))
+ 			# if deduction account is not type payable, aggregate; otherwise, break into individual party components
+ 			if not self.check_if_account_is_type_payable(deduction["account"]):
+	 			gl_map.append(self.new_gl_line(
+	 				account=self.get_salary_component_account(deduction["salary_component"]),
+	 				credit=deduction["amount"],
+	 			))
+	 		else:
+	 			current_slip = frappe.get_doc("Salary Slip", deduction["parent"])
+	 			gl_map.append(self.new_gl_line(
+	 				account=self.get_salary_component_account(deduction["salary_component"]),
+	 				credit=deduction["amount"],
+	 				against_voucher=deduction["parent"],
+	 				against_voucher_type="Salary Slip",
+	 				party=current_slip.employee,
+					party_type="Employee"
+	 			))
 
  		# manage loans
+ 		loan_details = self.get_loan_details()
 		for loan in loan_details:
 			gl_map.append(self.new_gl_line(
 				account=loan.loan_account,
@@ -231,22 +247,24 @@ class PayrollVoucher(AccountsController, PayrollEntry):
 		# manage payable amounts
 		self.outstanding_amount = 0
 		for slip in slips:
-			ss = frappe.get_doc("Salary Slip", slip["name"])
-			self.outstanding_amount += ss.net_pay
-			if self.aggregate_salary_slips:
-				gl_map.append(self.new_gl_line(
-					account=default_payroll_payable_account,
-					credit=ss.net_pay
-				))
-			else:
-				gl_map.append(self.new_gl_line(
-					account=default_payroll_payable_account,
-					credit=ss.net_pay,
-					party=ss.employee,
-					party_type="Employee",
-					against_voucher=ss.name,
-					against_voucher_type="Salary Slip"
-				))
+			if slip.salary_slip is not None:
+				ss = frappe.get_doc("Salary Slip", slip.salary_slip)
+				self.outstanding_amount += ss.net_pay
+				# if account type is not payable, aggregate the slips; otherwise, keep them separate
+				if not self.check_if_account_is_type_payable(default_payroll_payable_account):
+					gl_map.append(self.new_gl_line(
+						account=default_payroll_payable_account,
+						credit=ss.net_pay
+					))
+				else:
+					gl_map.append(self.new_gl_line(
+						account=default_payroll_payable_account,
+						credit=ss.net_pay,
+						against_voucher=ss.name,
+						against_voucher_type="Salary Slip",
+						party=ss.employee,
+						party_type="Employee"
+					))
 
 		print self.outstanding_amount
 		self.round_off_debit_credit(gl_map)
@@ -267,17 +285,20 @@ class PayrollVoucher(AccountsController, PayrollEntry):
 		"""
 			NEW: Utility function to help register_payroll_in_gl
 		"""
+		account_object = frappe.get_doc("Account", account)
 		return self.get_gl_dict({
 			"account": account,
-			"credit": flt(credit, frappe.get_precision("Journal Entry Account", "credit_in_account_currency")),
-			"debit": flt(debit, frappe.get_precision("Journal Entry Account", "debit_in_account_currency")),
+			"account_currency": account_object.account_currency,
+			 "credit": flt(credit, frappe.get_precision("Journal Entry Account", "credit_in_account_currency")),
+			 "debit": flt(debit, frappe.get_precision("Journal Entry Account", "debit_in_account_currency")),
+			#"credit_in_account_currency": flt(credit, frappe.get_precision("Journal Entry Account", "credit_in_account_currency")),
+			#"debit_in_account_currency": flt(debit, frappe.get_precision("Journal Entry Account", "debit_in_account_currency")),
 			"party": party,
 			"party_type": party_type,
 			"against_voucher": against_voucher,
 			"against_voucher_type": against_voucher_type,
-	# 		"account_currency": d.account_currency,
-	# 		"debit_in_account_currency": flt(d.debit_in_account_currency, d.precision("debit_in_account_currency")),
-	# 		"credit_in_account_currency": flt(d.credit_in_account_currency, d.precision("credit_in_account_currency")),
+	 		# "debit_in_account_currency": flt(account_object.debit_in_account_currency, account_object.precision("debit_in_account_currency")),
+	 		# "credit_in_account_currency": flt(account_object.credit_in_account_currency, account_object.precision("credit_in_account_currency")),
 			"remarks": _('Accrual for salaries from {0} to {1}').format(self.start_date, self.end_date),
 			"cost_center": self.cost_center,
 			"project": self.project,
@@ -289,11 +310,11 @@ class PayrollVoucher(AccountsController, PayrollEntry):
 		"""
 			MODIFIED: select also parent field to be able to distinguish by individual salary slip
 		"""
-		salary_slips = self.get_sal_slip_list(ss_status = 1, as_dict = True)
-		if salary_slips:
+		slips = [frappe.get_doc("Salary Slip", slip.salary_slip) for slip in self.salary_slips if slip.salary_slip is not None]
+		if slips:
 			salary_components = frappe.db.sql("""select salary_component, amount, parentfield, parent
 				from `tabSalary Detail` where parentfield = '%s' and parent in (%s)""" %
-				(component_type, ', '.join(['%s']*len(salary_slips))), tuple([d.name for d in salary_slips]), as_dict=True)
+				(component_type, ', '.join(['%s']*len(slips))), tuple([d.name for d in slips]), as_dict=True)
 			return salary_components
 
 	def round_off_debit_credit(self, gl_map):
@@ -337,18 +358,6 @@ class PayrollVoucher(AccountsController, PayrollEntry):
 		is_payable = (acct_type == "Payable")
 		return is_payable
 
-	def submit_salary_slips(self):
-		"""
-			MODIFIED: single line changed to make this call the custom non-class method submit_salary_slips_for_employees_mod
-			(If there were a way to override non-class methods somehow, this wouldn't be necessary)
-		"""
-		self.check_permission('write')
-		ss_list = self.get_sal_slip_list(ss_status=0)
-		if len(ss_list) > 30:
-			frappe.enqueue(submit_salary_slips_for_employees_mod, timeout=600, payroll_entry=self, salary_slips=ss_list)
-		else:
-			submit_salary_slips_for_employees_mod(self, ss_list, publish_progress=False)
-
 
 ##########################################
 ### non-class methods to be overridden ###
@@ -356,16 +365,19 @@ class PayrollVoucher(AccountsController, PayrollEntry):
 
 def submit_salary_slips_for_employees_mod(payroll_entry, salary_slips, publish_progress=True):
 	"""
-		MODIFIED: Single line changed
-		payroll_entry.make_accrual_jv_entry() -> payroll_entry.register_payroll_in_gl(cancel=False)
+		MODIFIED AND RENAMED
 	"""
 	submitted_ss = []
 	not_submitted_ss = []
 	frappe.flags.via_payroll_entry = True
 
 	count = 0
-	for ss in salary_slips:
-		ss_obj = frappe.get_doc("Salary Slip",ss[0])
+	created_slips = [ss.salary_slip for ss in salary_slips if ss.salary_slip is not None]
+
+
+
+	for ss in created_slips:
+		ss_obj = frappe.get_doc("Salary Slip", ss)
 		if ss_obj.net_pay<0:
 			not_submitted_ss.append(ss[0])
 		else:
@@ -391,10 +403,46 @@ def submit_salary_slips_for_employees_mod(payroll_entry, salary_slips, publish_p
 	payroll_entry.notify_update()
 
 	if not submitted_ss and not not_submitted_ss:
-		frappe.msgprint(_("No salary slip found to submit for the above selected criteria OR salary slip already submitted"))
+		frappe.msgprint(_("No salary slip found to submit for the above selected criteria"))
 
 	if not_submitted_ss:
 		frappe.msgprint(_("Could not submit some Salary Slips"))	
+
+
+def create_salary_slips_for_employees_mod(employees, slips, args, publish_progress=True):
+	"""
+		MODIFIED AND RENAMED: simplified to operate off of the salary_slips table and not the database
+		
+	"""
+	#salary_slips_exists_for = get_existing_salary_slips_mod(employees, args)
+	salary_slips_exists_for = [ slip.employee for slip in slips if slip.salary_slip != None ]
+	count=0
+
+	for emp in employees:
+		if emp not in salary_slips_exists_for:
+			args.update({
+				"doctype": "Salary Slip",
+				"employee": emp
+			})
+			ss = frappe.get_doc(args)
+			ss.insert()
+			count+=1
+			if publish_progress:
+				frappe.publish_progress(count*100/len(set(employees) - set(salary_slips_exists_for)),
+					title = _("Creating Salary Slips..."))
+
+	# payroll_entry = frappe.get_doc("Payroll Entry", args.payroll_entry)
+	# payroll_entry.db_set("salary_slips_created", 1)
+	# payroll_entry.notify_update()
+
+# def get_existing_salary_slips_mod(employees, args):
+# 	return frappe.db.sql_list("""
+# 		select distinct employee from `tabSalary Slip` 
+# 		where docstatus!= 2 and company = %s
+# 			and start_date >= %s and end_date <= %s 
+# 			and employee in (%s)
+# 	""" % ('%s', '%s', '%s', ', '.join(['%s']*len(employees))),
+# 		[args.company, args.start_date, args.end_date] + employees)
 
 #########################################################################
 ### NOTHING TO SEE BELOW HERE; OLD STUFF KEPT FOR REVIEW IF NECESSARY ###

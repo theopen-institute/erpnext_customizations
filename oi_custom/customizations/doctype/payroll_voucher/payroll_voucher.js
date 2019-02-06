@@ -8,12 +8,13 @@ frappe.ui.form.on('Payroll Voucher', {
 		}
 
 		frm.toggle_reqd(['payroll_frequency'], !frm.doc.salary_slip_based_on_timesheet);
-		console.log(frm)
 	},
 	refresh: function(frm) {
 
 	},
-
+	onsubmit: function(frm) {
+		frm.refresh_field('salary_slips');
+	},
 	create_missing_slips: function(frm) {
 		console.log(frm)
 		frappe.call({
@@ -170,9 +171,9 @@ frappe.ui.form.on('Payroll Voucher', {
 	find_relevant_employees: function (frm) {
 		if (frm.doc.company && frm.doc.start_date && frm.doc.end_date) {
 			frappe.call({
-				method: 'fill_salary_slips',
+				method: 'populate_salary_slip_table',
 				args: {},
-				callback: function() {frm.refresh_field('salary_slips'); console.log(frm);},
+				callback: function() { frm.refresh_field('salary_slips'); },
 				doc: frm.doc,
 				freeze:true,
 				freeze_message: 'Finding employees for these criteria...'
