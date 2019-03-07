@@ -133,10 +133,12 @@ class PayrollVoucher(AccountsController, PayrollEntry):
 		"""
 		self.check_permission('write')
 		self.created = 1
+		print("creating")
 		#emp_list = [d.employee for d in self.get_emp_list()]
 		emp_list = [d.employee for d in self.salary_slips]
 
 		if emp_list:
+			print(emp_list)
 			args = frappe._dict({
 				"salary_slip_based_on_timesheet": self.salary_slip_based_on_timesheet,
 				"payroll_frequency": self.payroll_frequency,
@@ -151,6 +153,7 @@ class PayrollVoucher(AccountsController, PayrollEntry):
 			if len(emp_list) > 30:
 				frappe.enqueue(create_salary_slips_for_employees_mod, timeout=600, employees=emp_list, slips=self.salary_slips, args=args)
 			else:
+				print("creating slips")
 				create_salary_slips_for_employees_mod(emp_list, self.salary_slips, args, publish_progress=False)
 			
 			self.populate_salary_slip_table()
@@ -415,8 +418,11 @@ def create_salary_slips_for_employees_mod(employees, slips, args, publish_progre
 		
 	"""
 	#salary_slips_exists_for = get_existing_salary_slips_mod(employees, args)
+	print("in the modzone")
 	salary_slips_exists_for = [ slip.employee for slip in slips if slip.salary_slip != None ]
 	count=0
+	print(employees)
+	print(salary_slips_exists_for)
 
 	for emp in employees:
 		if emp not in salary_slips_exists_for:
@@ -425,6 +431,7 @@ def create_salary_slips_for_employees_mod(employees, slips, args, publish_progre
 				"employee": emp
 			})
 			ss = frappe.get_doc(args)
+			print(ss)
 			ss.insert()
 			count+=1
 			if publish_progress:
