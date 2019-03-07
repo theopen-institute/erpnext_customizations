@@ -74,17 +74,17 @@ class PayrollVoucher(AccountsController, PayrollEntry):
 				frappe.delete_doc("Payroll Salary Slip Detail", ss.name)
 		
 		# then, submit the remaining salary slips
- 		self.submit_salary_slips()
+		self.submit_salary_slips()
 
- 	def on_cancel(self):
- 		"""
- 			NEW: remove ledger entries on cancellation
- 		"""
- 		self.register_payroll_in_gl(cancel=True)
- 		for slip in self.salary_slips:
- 			if slip.salary_slip is not None:
- 				frappe.get_doc("Salary Slip", slip.salary_slip).cancel()
- 				slip.salary_slip = None
+	def on_cancel(self):
+		"""
+			NEW: remove ledger entries on cancellation
+		"""
+		self.register_payroll_in_gl(cancel=True)
+		for slip in self.salary_slips:
+			if slip.salary_slip is not None:
+				frappe.get_doc("Salary Slip", slip.salary_slip).cancel()
+				slip.salary_slip = None
 
 
  	################################
@@ -184,46 +184,46 @@ class PayrollVoucher(AccountsController, PayrollEntry):
 		"""
 		self.check_permission('write')
 		default_payroll_payable_account = self.get_default_payroll_payable_account()
- 		slips = self.salary_slips
- 		gl_map = []
+		slips = self.salary_slips
+		gl_map = []
 
- 		# manage earnings
- 		earnings = self.get_salary_components(component_type="earnings") or {}
- 		for earning in earnings:
- 			earning["account"] = self.get_salary_component_account(earning["salary_component"])
- 			is_flexible_benefit, only_tax_impact = frappe.db.get_value("Salary Component", earning['salary_component'], ['is_flexible_benefit', 'only_tax_impact'])
- 			# if the earning is not actually salary but only_tax_impact, do not add it to the GL
- 			if not (is_flexible_benefit and only_tax_impact):
-	 			gl_map.append(self.new_gl_line(
-	 				account=self.get_salary_component_account(earning["salary_component"]),
-	 				debit=earning["amount"],
-	 				#against_voucher=earning["parent"],
-	 				#against_voucher_type="Salary Slip"
-	 			))
+		# manage earnings
+		earnings = self.get_salary_components(component_type="earnings") or {}
+		for earning in earnings:
+			earning["account"] = self.get_salary_component_account(earning["salary_component"])
+			is_flexible_benefit, only_tax_impact = frappe.db.get_value("Salary Component", earning['salary_component'], ['is_flexible_benefit', 'only_tax_impact'])
+			# if the earning is not actually salary but only_tax_impact, do not add it to the GL
+			if not (is_flexible_benefit and only_tax_impact):
+				gl_map.append(self.new_gl_line(
+					account=self.get_salary_component_account(earning["salary_component"]),
+					debit=earning["amount"],
+					#against_voucher=earning["parent"],
+					#against_voucher_type="Salary Slip"
+				))
 
-	 	# manage deductions
-	 	deductions = self.get_salary_components(component_type="deductions") or {}
- 		for deduction in deductions:
- 			deduction["account"] = self.get_salary_component_account(deduction["salary_component"])
- 			# if deduction account is not type payable, aggregate; otherwise, break into individual party components
- 			if not self.check_if_account_is_type_payable(deduction["account"]):
-	 			gl_map.append(self.new_gl_line(
-	 				account=self.get_salary_component_account(deduction["salary_component"]),
-	 				credit=deduction["amount"],
-	 			))
-	 		else:
-	 			current_slip = frappe.get_doc("Salary Slip", deduction["parent"])
-	 			gl_map.append(self.new_gl_line(
-	 				account=self.get_salary_component_account(deduction["salary_component"]),
-	 				credit=deduction["amount"],
-	 				against_voucher=deduction["parent"],
-	 				against_voucher_type="Salary Slip",
-	 				party=current_slip.employee,
+		# manage deductions
+		deductions = self.get_salary_components(component_type="deductions") or {}
+		for deduction in deductions:
+			deduction["account"] = self.get_salary_component_account(deduction["salary_component"])
+			# if deduction account is not type payable, aggregate; otherwise, break into individual party components
+			if not self.check_if_account_is_type_payable(deduction["account"]):
+				gl_map.append(self.new_gl_line(
+					account=self.get_salary_component_account(deduction["salary_component"]),
+					credit=deduction["amount"],
+				))
+			else:
+				current_slip = frappe.get_doc("Salary Slip", deduction["parent"])
+				gl_map.append(self.new_gl_line(
+					account=self.get_salary_component_account(deduction["salary_component"]),
+					credit=deduction["amount"],
+					against_voucher=deduction["parent"],
+					against_voucher_type="Salary Slip",
+					party=current_slip.employee,
 					party_type="Employee"
-	 			))
+				))
 
  		# manage loans
- 		loan_details = self.get_loan_details()
+		loan_details = self.get_loan_details()
 		for loan in loan_details:
 			gl_map.append(self.new_gl_line(
 				account=loan.loan_account,
@@ -266,7 +266,7 @@ class PayrollVoucher(AccountsController, PayrollEntry):
 						party_type="Employee"
 					))
 
-		print self.outstanding_amount
+		print(self.outstanding_amount)
 		self.round_off_debit_credit(gl_map)
 		
 		## iterate through the gl_map to set "against" values for everything.
