@@ -9,49 +9,49 @@ from frappe.utils import formatdate, get_number_format_info
 from erpnext.accounts.doctype.payment_entry.payment_entry import PaymentEntry
 
 
-def onloadping(doc,method):
-	print("############# hook method2")
-	print(doc.validate_reference_documents)
-	PaymentEntry.validate_reference_documents = custom_validate_reference_documents
-	print(doc.validate_reference_documents)
+# def onloadping(doc,method):
+# 	print("############# hook method2")
+# 	print(doc.validate_reference_documents)
+# 	PaymentEntry.validate_reference_documents = custom_validate_reference_documents
+# 	print(doc.validate_reference_documents)
 
-	#PaymentEntry.get_orders_to_be_billed = custom_get_orders_to_be_billed
-	#print(PaymentEntry.validate_reference_documents)
-	#print(doc.validate_reference_documents)
-	#doc.validate_reference_documents(doc)
+# 	#PaymentEntry.get_orders_to_be_billed = custom_get_orders_to_be_billed
+# 	#print(PaymentEntry.validate_reference_documents)
+# 	#print(doc.validate_reference_documents)
+# 	#doc.validate_reference_documents(doc)
 
 	
-	#PaymentEntry.validate_reference_documents = custom_validate_reference_documents
-	#Pay.validate(doc)
-	#frappe.msgprint("zzzz")
+# 	#PaymentEntry.validate_reference_documents = custom_validate_reference_documents
+# 	#Pay.validate(doc)
+# 	#frappe.msgprint("zzzz")
 
 def customize_before_validate(doc,method):
 	print("&&&&&&&&&&&&&& before validate")
 	PaymentEntry.validate_reference_documents = custom_validate_reference_documents
 
-def customize_payment_entry(doc,method):
-	print("############# hook method")
-	PaymentEntry.validate_reference_documents = custom_validate_reference_documents
+# def customize_payment_entry(doc,method):
+# 	print("############# hook method")
+# 	PaymentEntry.validate_reference_documents = custom_validate_reference_documents
 	
-	doc.setup_party_account_field()
-	doc.set_missing_values()
-	doc.validate_payment_type()
-	doc.validate_party_details()
-	doc.validate_bank_accounts()
-	doc.set_exchange_rate()
-	doc.validate_mandatory()
-	doc.validate_reference_documents()
-	doc.set_amounts()
-	doc.clear_unallocated_reference_document_rows()
-	doc.validate_payment_against_negative_invoice()
-	doc.validate_transaction_reference()
-	doc.set_title()
-	doc.set_remarks()
-	doc.validate_duplicate_entry()
-	doc.validate_allocated_amount()
-	doc.ensure_supplier_is_not_blocked()
+# 	doc.setup_party_account_field()
+# 	doc.set_missing_values()
+# 	doc.validate_payment_type()
+# 	doc.validate_party_details()
+# 	doc.validate_bank_accounts()
+# 	doc.set_exchange_rate()
+# 	doc.validate_mandatory()
+# 	doc.validate_reference_documents()
+# 	doc.set_amounts()
+# 	doc.clear_unallocated_reference_document_rows()
+# 	doc.validate_payment_against_negative_invoice()
+# 	doc.validate_transaction_reference()
+# 	doc.set_title()
+# 	doc.set_remarks()
+# 	doc.validate_duplicate_entry()
+# 	doc.validate_allocated_amount()
+# 	doc.ensure_supplier_is_not_blocked()
 
-	return {'override': True}
+# 	return {'override': True}
 
 
 # methods to override from payment_entry.py
