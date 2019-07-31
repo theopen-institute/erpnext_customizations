@@ -1,0 +1,7 @@
+
+#page-query-report .layout-main-section-wrapper {
+	margin-bottom: 0 !important;
+}
+#page-query-report .page-body { min-height: auto; }
+#page-query-report .dt-scrollable { height: calc(100vh - 390px) !important; }
+

@@ -18,6 +18,10 @@ app_license = "MIT"
 # app_include_css = "/assets/oi_custom/css/oi_custom.css"
 # app_include_js = "/assets/oi_custom/js/oi_custom.js"
 
+app_include_css = [
+    "/assets/oi_custom/css/custom.css"
+]
+
 # include js, css files in header of web template
 # web_include_css = "/assets/oi_custom/css/oi_custom.css"
 # web_include_js = "/assets/oi_custom/js/oi_custom.js"
